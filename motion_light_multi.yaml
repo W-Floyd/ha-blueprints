@@ -3,6 +3,7 @@ blueprint:
   description: >-
     Turn on a light when any of several motion or presence sensors detects motion.
     Turn it off once all of them have been clear for the wait time.
+    Optional night mode uses a different light, brightness and wait time after sunset.
     Based on Home Assistant's built-in Motion-activated Light.
   domain: automation
   source_url: https://github.com/W-Floyd/ha-blueprints/blob/main/motion_light_multi.yaml
@@ -27,6 +28,15 @@ blueprint:
         target:
           entity:
             domain: light
+    brightness_pct:
+      name: Brightness
+      description: Brightness to turn the light on at. 0 leaves it at its last brightness.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
     no_motion_wait:
       name: Wait time
       description: Time to leave the light on after the last sensor clears.
@@ -36,13 +46,77 @@ blueprint:
           min: 0
           max: 3600
           unit_of_measurement: seconds
+    night:
+      name: Night mode
+      icon: mdi:weather-night
+      collapsed: true
+      input:
+        night_mode:
+          name: Enable night mode
+          description: While the sun is below the horizon, use the night settings below.
+          default: false
+          selector:
+            boolean:
+        night_skip_lights:
+          name: Unless any of these lights are on
+          description: >-
+            Night mode is skipped while any of these is on, e.g. other lights on the
+            same floor, meaning someone is up. Don't include this automation's own
+            lights, or motion while the night light is on switches to the day light.
+          default: []
+          selector:
+            entity:
+              multiple: true
+              filter:
+                domain: light
+        night_light_target:
+          name: Night light
+          description: Light to turn on in night mode. Leave empty to use the main light.
+          default: {}
+          selector:
+            target:
+              entity:
+                domain: light
+        night_brightness_pct:
+          name: Night brightness
+          default: 1
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+        night_no_motion_wait:
+          name: Night wait time
+          default: 60
+          selector:
+            number:
+              min: 0
+              max: 3600
+              unit_of_measurement: seconds
 
 # Any sensor turning on during the wait restarts the run.
 mode: restart
 max_exceeded: silent
 
 variables:
-  motion_entities: !input motion_entities
+  motion_input: !input motion_entities
+  # A single entity written by hand in YAML arrives as a string; iterating it would yield characters.
+  motion_entities: "{{ [motion_input] if motion_input is string else motion_input }}"
+  light_target: !input light_target
+  brightness_input: !input brightness_pct
+  wait_input: !input no_motion_wait
+  night_mode_input: !input night_mode
+  night_skip_lights: !input night_skip_lights
+  night_light_input: !input night_light_target
+  night_brightness_input: !input night_brightness_pct
+  night_wait_input: !input night_no_motion_wait
+  night_light_set: "{{ night_light_input is mapping and night_light_input.values() | select | list | count > 0 }}"
+  night: >-
+    {{ night_mode_input and is_state('sun.sun', 'below_horizon')
+       and night_skip_lights | select('is_state', 'on') | list | count == 0 }}
+  on_target: "{{ night_light_input if night and night_light_set else light_target }}"
+  brightness: "{{ (night_brightness_input if night else brightness_input) | int(0) }}"
+  wait: "{{ (night_wait_input if night else wait_input) | int(0) }}"
 
 triggers:
   - trigger: state
@@ -53,11 +127,18 @@ triggers:
 actions:
   - alias: Turn on the light
     action: light.turn_on
-    target: !input light_target
+    target: "{{ on_target }}"
+    data: "{{ {'brightness_pct': brightness} if brightness > 0 else {} }}"
   - alias: Wait until no sensor reports motion
     wait_template: "{{ motion_entities | select('is_state', 'on') | list | count == 0 }}"
   - alias: Wait the number of seconds that has been set
-    delay: !input no_motion_wait
+    delay:
+      seconds: "{{ wait }}"
   - alias: Turn off the light
     action: light.turn_off
     target: !input light_target
+  - alias: Turn off the night light
+    if: "{{ night_light_set }}"
+    then:
+      - action: light.turn_off
+        target: !input night_light_target
