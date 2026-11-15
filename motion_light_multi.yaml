@@ -132,7 +132,8 @@ variables:
        and night_skip_lights | select('is_state', 'on') | list | count == 0 }}
   on_target: "{{ night_light_input if night and night_light_set else light_target }}"
   brightness: "{{ (night_brightness_input if night else brightness_input) | int(0) }}"
-  wait: "{{ (night_wait_input if night else wait_input) | int(0) }}"
+  # Not "wait": HA overwrites that variable with the result of every wait step.
+  off_delay: "{{ (night_wait_input if night else wait_input) | int(0) }}"
 
 triggers:
   - trigger: state
@@ -151,7 +152,7 @@ actions:
     wait_template: "{{ motion_entities | select('is_state', 'on') | list | count == 0 }}"
   - alias: Wait the number of seconds that has been set
     delay:
-      seconds: "{{ wait }}"
+      seconds: "{{ off_delay }}"
   - alias: Turn off the light unless the off conditions fail
     if: !input off_conditions
     then:
