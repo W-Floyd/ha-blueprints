@@ -46,6 +46,14 @@ blueprint:
           min: 0
           max: 3600
           unit_of_measurement: seconds
+    extra_conditions:
+      name: Only when
+      description: >-
+        Conditions checked each time motion is detected. If they fail, the light is
+        not turned on (a run already in progress continues). Leave empty to always react.
+      default: []
+      selector:
+        condition: {}
     night:
       name: Night mode
       icon: mdi:weather-night
@@ -123,6 +131,8 @@ triggers:
     entity_id: !input motion_entities
     from: "off"
     to: "on"
+
+conditions: !input extra_conditions
 
 actions:
   - alias: Turn on the light
