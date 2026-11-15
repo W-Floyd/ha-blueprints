@@ -54,6 +54,14 @@ blueprint:
       default: []
       selector:
         condition: {}
+    off_conditions:
+      name: Only turn off when
+      description: >-
+        Conditions checked after the wait time. If they fail, the light is left on.
+        Leave empty to always turn off.
+      default: []
+      selector:
+        condition: {}
     night:
       name: Night mode
       icon: mdi:weather-night
@@ -144,11 +152,13 @@ actions:
   - alias: Wait the number of seconds that has been set
     delay:
       seconds: "{{ wait }}"
-  - alias: Turn off the light
-    action: light.turn_off
-    target: !input light_target
-  - alias: Turn off the night light
-    if: "{{ night_light_set }}"
+  - alias: Turn off the light unless the off conditions fail
+    if: !input off_conditions
     then:
       - action: light.turn_off
-        target: !input night_light_target
+        target: !input light_target
+      - alias: Turn off the night light
+        if: "{{ night_light_set }}"
+        then:
+          - action: light.turn_off
+            target: !input night_light_target
